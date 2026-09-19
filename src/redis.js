@@ -1,16 +1,21 @@
 import Redis from 'ioredis';
+import { config } from './config.js';
 
-export const redis = process.env.REDIS_URL
-  ? new Redis(process.env.REDIS_URL, {
-      maxRetriesPerRequest: 2,
-      lazyConnect: true,
-      enableReadyCheck: true,
-      connectTimeout: 10000,
-    })
-  : null;
+export function createRedisConnection(extra = {}) {
+  if (!config.redisUrl) return null;
+  return new Redis(config.redisUrl, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
+    connectTimeout: 10000,
+    lazyConnect: true,
+    ...extra
+  });
+}
 
-export async function ensureRedis() {
-  if (!redis) return false;
-  if (redis.status === 'wait' || redis.status === 'end') await redis.connect();
+export const redis = createRedisConnection({ maxRetriesPerRequest: 2 });
+
+export async function ensureRedis(client = redis) {
+  if (!client) return false;
+  if (client.status === 'wait' || client.status === 'end') await client.connect();
   return true;
 }
