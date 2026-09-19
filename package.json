@@ -8,7 +8,9 @@
     "worker": "node src/worker-entry.js",
     "dev": "node --watch src/server.js",
     "migrate": "node src/migrate.js",
-    "check": "node --check src/server.js && node --check src/worker.js && node --check src/routes/auth.js && node --check src/routes/workspaces.js && node --check src/routes/crm.js && node --check src/routes/platform.js",
+    "doctor": "node src/doctor.js",
+    "legacy:scan": "node src/legacy-scan.js",
+    "check": "node --check src/server.js && node --check src/worker.js && node --check src/routes/auth.js && node --check src/routes/workspaces.js && node --check src/routes/crm.js && node --check src/routes/platform.js && node --check src/doctor.js && node --check src/legacy-scan.js",
     "test": "node --test tests/*.test.js"
   },
   "engines": { "node": ">=22 <23" },

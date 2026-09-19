@@ -12,6 +12,39 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: karven
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d karven"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/karven
+      REDIS_URL: redis://127.0.0.1:6379
+      KARVEN_JWT_SECRET: ci-karven-jwt-secret-0123456789-0123456789
+      KARVEN_ADMIN_API_KEY: ci-karven-admin-key-0123456789-0123456789
+      KARVEN_ALLOWED_ORIGINS: http://127.0.0.1:3000
+      KARVEN_APP_URL: http://127.0.0.1:3000
+      KARVEN_RUN_WORKER: "true"
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,5 +52,36 @@ jobs:
           node-version: '22'
       - run: npm install --ignore-scripts --no-audit --no-fund
       - run: npm run check
-      - run: node --test tests/*.test.js
+      - run: npm test
       - run: docker build -t karven-backend:ci .
+      - run: npm run migrate
+      - name: Start KARVEN and verify runtime
+        shell: bash
+        run: |
+          node src/server.js >/tmp/karven.log 2>&1 &
+          echo $! >/tmp/karven.pid
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/ready >/tmp/ready.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            cat /tmp/karven.log
+            exit 1
+          fi
+          grep -q '"status":"ready"' /tmp/ready.json
+
+          curl -fsS -X POST http://127.0.0.1:3000/api/v1/auth/register             -H 'content-type: application/json'             -d '{"email":"ci@karven.test","password":"correct-horse-123","fullName":"CI User","workspaceName":"CI Workspace"}'             >/tmp/register.json
+          grep -q '"accessToken"' /tmp/register.json
+
+          curl -fsS -X POST http://127.0.0.1:3000/api/v1/auth/login             -H 'content-type: application/json'             -d '{"email":"ci@karven.test","password":"correct-horse-123"}'             >/tmp/login.json
+          grep -q '"accessToken"' /tmp/login.json
+
+          curl -fsS http://127.0.0.1:3000/api/admin/overview             -H 'x-karven-admin-key: ci-karven-admin-key-0123456789-0123456789'             >/tmp/admin.json
+          grep -q '"workspaces":1' /tmp/admin.json
+      - name: Print server logs on failure
+        if: failure()
+        run: cat /tmp/karven.log || true
