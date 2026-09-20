@@ -54,7 +54,7 @@ const server=http.createServer(async(req,res)=>{
         'x-content-type-options':'nosniff',
         'x-frame-options':'DENY',
         'referrer-policy':'strict-origin-when-cross-origin',
-        'content-security-policy':"default-src 'self'; connect-src 'self' https://karven-backend-production.up.railway.app; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        'content-security-policy':"default-src 'self'; connect-src 'self' https:; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
       });
       return res.end(data);
     }catch{
