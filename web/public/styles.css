@@ -536,3 +536,52 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
 }
+
+
+.sidebar-search{
+  min-height:36px;border:1px solid #2a2a2f;background:#17171a;color:#9b9ba4;border-radius:8px;padding:0 9px;
+  display:flex;align-items:center;gap:9px;text-align:left;font-size:11px;
+  transition:background var(--motion-fast) ease,border-color var(--motion-fast) ease,color var(--motion-fast) ease;
+}
+.sidebar-search:hover{background:#202024;border-color:#34343a;color:#fff}
+.sidebar-search-icon{width:18px;text-align:center}
+.sidebar-search-copy{flex:1}
+.sidebar-search kbd{font-family:inherit;font-size:9px;color:#686870;border:1px solid #333338;border-radius:4px;padding:2px 5px;background:#121214}
+.app-layout.nav-collapsed .sidebar-search{justify-content:center;padding:0;border-color:transparent;background:transparent}
+.app-layout.nav-collapsed .sidebar-search-copy,.app-layout.nav-collapsed .sidebar-search kbd{display:none}
+.app-layout.nav-collapsed .sidebar-search-icon{font-size:14px;width:auto}
+
+.app-body{transition:margin-right var(--motion-normal) var(--motion-ease-soft)}
+.app-layout.drawer-open .app-body{margin-right:min(460px,36vw)}
+.drawer-layer .drawer-backdrop{background:transparent}
+.drawer-layer.open .drawer-backdrop{opacity:1}
+
+.public-page{animation:karvenPublicIn var(--motion-slow) var(--motion-ease-soft)}
+.hero-copy>*{animation:karvenHeroIn .36s var(--motion-ease-soft) both}
+.hero-copy>*:nth-child(2){animation-delay:.03s}
+.hero-copy>*:nth-child(3){animation-delay:.06s}
+.hero-copy>*:nth-child(4){animation-delay:.09s}
+.hero-copy>*:nth-child(5){animation-delay:.12s}
+.product-frame{animation:karvenFrameIn .42s var(--motion-ease-soft) .08s both}
+@keyframes karvenPublicIn{from{opacity:.55}to{opacity:1}}
+@keyframes karvenHeroIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes karvenFrameIn{from{opacity:0;transform:translateY(8px) scale(.992) rotate(.5deg)}to{opacity:1;transform:translateY(0) scale(1) rotate(.5deg)}}
+
+.calendar-shell{background:#fff;border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.calendar-toolbar{min-height:52px;padding:0 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.calendar-toolbar h3{font-size:13px;margin:0}
+.calendar-toolbar-actions{display:flex;gap:6px}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));min-width:840px}
+.calendar-weekday{height:34px;display:flex;align-items:center;padding:0 9px;background:#fafafb;border-right:1px solid var(--line);border-bottom:1px solid var(--line);font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#8f8f97}
+.calendar-day{min-height:124px;padding:8px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff}
+.calendar-day.outside{background:#fbfbfc;color:#b2b2b9}
+.calendar-day.today{box-shadow:inset 0 0 0 1px #aeb1c8}
+.calendar-date{font-size:9px;color:#888891;margin-bottom:7px}
+.calendar-task{border:1px solid #e3e3e7;background:#f8f8fa;border-radius:7px;padding:6px 7px;margin-bottom:5px;font-size:9px;line-height:1.35;cursor:pointer;transition:background var(--motion-fast) ease,border-color var(--motion-fast) ease,transform var(--motion-fast) ease}
+.calendar-task:hover{background:#f1f1f4;border-color:#cfcfd5;transform:translateY(-1px)}
+.calendar-task b{display:block;font-size:9px;margin-bottom:2px}
+.calendar-task span{color:#8d8d95}
+
+@media(max-width:1050px){
+  .app-layout.drawer-open .app-body{margin-right:0}
+}
