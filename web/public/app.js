@@ -297,7 +297,7 @@
     var q=search?search.value:"";
     var items=commandItemsForQuery(q);
     commandState.items=items;
-    commandState.index=Math.min(commandState.index,Math.max(0,items.length-1));
+    commandState.index=Math.max(0,Math.min(commandState.index,Math.max(0,items.length-1)));
     if(!items.length) {
       container.innerHTML='<div class="command-empty">No matching KARVEN commands or records.</div>';
       return;
@@ -314,7 +314,7 @@
       return html+'</div>';
     }).join("");
     $("[data-command-index]",container).forEach(function(b){
-      b.onmouseenter=function(){commandState.index=Number(b.dataset.commandIndex);renderCommandResults();};
+      b.onmouseenter=function(){commandState.index=Number(b.dataset.commandIndex);$(".command-item",container).forEach(function(x){x.classList.toggle("active",Number(x.dataset.commandIndex)===commandState.index);});};
       b.onclick=function(){var item=commandState.items[Number(b.dataset.commandIndex)];if(item&&item.run)item.run();};
     });
     var active=$(".command-item.active",container);
@@ -386,6 +386,7 @@
     $("[data-record-id]",appContent).forEach(function(el){el.classList.toggle("is-selected",el.dataset.recordId===String(item.id));});
     layer.classList.remove("hidden");
     layer.setAttribute("aria-hidden","false");
+    appView.classList.add("drawer-open");
     window.requestAnimationFrame(function(){layer.classList.add("open");});
     var edit=$("#drawerEdit");
     if(edit) edit.onclick=function(){
@@ -682,6 +683,10 @@
     var ops = results[2].items || [];
     var tasks = results[3].items || [];
     var activities = results[4].items || [];
+    state.cache.companies=companies;
+    state.cache.people=people;
+    state.cache.opportunities=ops;
+    state.cache.tasks=tasks;
     var openOps = ops.filter(function (x) { return x.status === "open"; });
     var pipeline = openOps.reduce(function (sum, x) { return sum + Number(x.amount_cents || 0); }, 0);
     var openTasks = tasks.filter(function (x) { return x.status !== "done" && x.status !== "cancelled"; });
@@ -816,9 +821,10 @@
     var pipeline=pipelines.find(function(p){return p.is_default;})||pipelines[0]||null;
     var columns=[];
     if(pipeline&&pipeline.stages&&pipeline.stages.length){
-      columns=pipeline.stages.map(function(s){return {key:s.id,label:s.name,pipelineId:pipeline.id,stageId:s.id,probability:s.probability,items:items.filter(function(x){return x.stage_id===s.id;})};});
-      var unassigned=items.filter(function(x){return !x.stage_id;});
-      if(unassigned.length)columns.unshift({key:"unassigned",label:"Unassigned",pipelineId:pipeline.id,stageId:null,probability:0,items:unassigned});
+      var stageIds=pipeline.stages.map(function(s){return s.id;});
+      columns=pipeline.stages.map(function(s){return {key:s.id,label:s.name,pipelineId:pipeline.id,stageId:s.id,probability:s.probability,items:items.filter(function(x){return x.pipeline_id===pipeline.id&&x.stage_id===s.id;})};});
+      var unassigned=items.filter(function(x){return x.pipeline_id!==pipeline.id||!x.stage_id||stageIds.indexOf(x.stage_id)===-1;});
+      if(unassigned.length)columns.unshift({key:"unassigned",label:"Unassigned",pipelineId:null,stageId:null,probability:0,items:unassigned});
     } else {
       ["open","won","lost","archived"].forEach(function(status){columns.push({key:status,label:status,status:status,items:items.filter(function(x){return x.status===status;})});});
     }
@@ -877,15 +883,61 @@
   async function renderTasks() {
     var d=await api("/api/v1/workspaces/"+wid()+"/tasks?limit=500"),items=d.items||[];
     state.cache.tasks=items;
-    appContent.innerHTML=pageTop("Follow-ups and accountable work across the workspace.",'<button id="newTask" class="button button-dark button-compact">＋ Task</button>')+'<section class="card">'+(items.length?tasksTable(items):empty("No tasks yet","Create the first follow-up or workspace task.","Add task","task"))+'</section>';
-    $("#newTask").onclick=function(){taskForm();};bindEmptyActions();
-    $$("[data-edit-task]",appContent).forEach(function(b){b.onclick=function(){taskForm(items.find(function(x){return x.id===b.dataset.editTask;}));};});
+    var view=localStorage.getItem("karven_task_view")||"table";
+    var toggle='<div class="view-toggle"><button data-task-view="table" class="'+(view==="table"?"active":"")+'">Table</button><button data-task-view="calendar" class="'+(view==="calendar"?"active":"")+'">Calendar</button></div>';
+    appContent.innerHTML=pageTop("Follow-ups and accountable work across the workspace.",toggle+'<button id="newTask" class="button button-dark button-compact">＋ Task</button>')+
+      (view==="calendar"?renderTaskCalendar(items):'<section class="card">'+(items.length?tasksTable(items):empty("No tasks yet","Create the first follow-up or workspace task.","Add task","task"))+'</section>');
+    $("#newTask").onclick=function(){taskForm();};
+    bindEmptyActions();
+    $$("[data-task-view]",appContent).forEach(function(b){b.onclick=function(){localStorage.setItem("karven_task_view",b.dataset.taskView);renderTasks();};});
+    $$("[data-edit-task]",appContent).forEach(function(b){b.onclick=function(e){e.stopPropagation();taskForm(items.find(function(x){return x.id===b.dataset.editTask;}));};});
+    if(view==="calendar")bindTaskCalendar(items);
   }
 
   function tasksTable(items) {
     return '<div class="table-toolbar"><div class="table-toolbar-left"><span class="density-chip">'+items.length+' records</span></div><div class="table-toolbar-right"><span class="density-chip">Due date order</span></div></div>'+
       '<div class="table-scroll"><table class="data-table"><thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Due</th><th></th></tr></thead><tbody>'+
       items.map(function(x){return '<tr class="record-row" data-record-kind="task" data-record-id="'+esc(x.id)+'"><td><span class="table-title">'+esc(x.title)+'</span><span class="table-sub">'+esc(x.description||"")+'</span></td><td>'+badge(x.status)+'</td><td>'+badge(x.priority)+'</td><td>'+esc(dateTime(x.due_at))+'</td><td><div class="row-actions"><button class="icon-button" data-edit-task="'+esc(x.id)+'">Edit</button></div></td></tr>';}).join("")+'</tbody></table></div>';
+  }
+
+  function taskMonthDate() {
+    var saved=state.cache.taskMonth;
+    if(saved instanceof Date&&!Number.isNaN(saved.valueOf()))return saved;
+    var now=new Date();
+    state.cache.taskMonth=new Date(now.getFullYear(),now.getMonth(),1);
+    return state.cache.taskMonth;
+  }
+
+  function renderTaskCalendar(items) {
+    var month=taskMonthDate();
+    var first=new Date(month.getFullYear(),month.getMonth(),1);
+    var start=new Date(first);
+    start.setDate(first.getDate()-first.getDay());
+    var today=new Date();
+    var weekdays=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    var cells=[];
+    for(var i=0;i<42;i++){
+      var day=new Date(start);day.setDate(start.getDate()+i);
+      var dayTasks=items.filter(function(t){
+        if(!t.due_at)return false;
+        var d=new Date(t.due_at);
+        return d.getFullYear()===day.getFullYear()&&d.getMonth()===day.getMonth()&&d.getDate()===day.getDate();
+      });
+      var outside=day.getMonth()!==month.getMonth();
+      var isToday=day.getFullYear()===today.getFullYear()&&day.getMonth()===today.getMonth()&&day.getDate()===today.getDate();
+      cells.push('<div class="calendar-day '+(outside?"outside ":"")+(isToday?"today":"")+'"><div class="calendar-date">'+day.getDate()+'</div>'+
+        dayTasks.slice(0,5).map(function(t){return '<div class="calendar-task record-row" data-record-kind="task" data-record-id="'+esc(t.id)+'"><b>'+esc(t.title)+'</b><span>'+esc(String(t.status||"todo").replace(/_/g," "))+'</span></div>';}).join("")+
+        (dayTasks.length>5?'<div class="calendar-date">+'+(dayTasks.length-5)+' more</div>':'')+'</div>');
+    }
+    var label=month.toLocaleDateString(undefined,{month:"long",year:"numeric"});
+    return '<section class="calendar-shell"><div class="calendar-toolbar"><h3>'+esc(label)+'</h3><div class="calendar-toolbar-actions"><button class="icon-button" id="calendarPrev">←</button><button class="icon-button" id="calendarToday">Today</button><button class="icon-button" id="calendarNext">→</button></div></div><div class="table-scroll"><div class="calendar-grid">'+weekdays.map(function(w){return '<div class="calendar-weekday">'+w+'</div>';}).join("")+cells.join("")+'</div></div></section>';
+  }
+
+  function bindTaskCalendar(items) {
+    var month=taskMonthDate();
+    $("#calendarPrev").onclick=function(){state.cache.taskMonth=new Date(month.getFullYear(),month.getMonth()-1,1);renderTasks();};
+    $("#calendarNext").onclick=function(){state.cache.taskMonth=new Date(month.getFullYear(),month.getMonth()+1,1);renderTasks();};
+    $("#calendarToday").onclick=function(){var now=new Date();state.cache.taskMonth=new Date(now.getFullYear(),now.getMonth(),1);renderTasks();};
   }
 
   function taskForm(item) {
@@ -1070,6 +1122,7 @@
   $("#signOutButton").onclick=async function(){try{if(state.refresh)await api("/api/v1/auth/logout",{method:"POST",body:{refreshToken:state.refresh},noAuth:true});}catch(_){}clearSession();renderPublic("/",true);};
 
   $("#commandButton").onclick=openCommandMenu;
+  $("#sidebarSearch").onclick=openCommandMenu;
   $("#commandBackdrop").onclick=closeCommandMenu;
   $("#recordDrawerBackdrop").onclick=closeRecordDrawer;
   $("#drawerClose").onclick=closeRecordDrawer;
