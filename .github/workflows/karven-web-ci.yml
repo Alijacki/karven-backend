@@ -24,6 +24,18 @@ jobs:
         run: |
           node --check web/server.js
           node --check web/public/app.js
+      - name: Premium UI contract
+        run: |
+          grep -q 'id="commandLayer"' web/public/index.html
+          grep -q 'id="recordDrawerLayer"' web/public/index.html
+          grep -q 'id="sidebarResizeHandle"' web/public/index.html
+          grep -q 'function openCommandMenu' web/public/app.js
+          grep -q 'function openRecordDrawer' web/public/app.js
+          grep -q 'function renderOpportunityKanban' web/public/app.js
+          grep -q 'function renderTaskCalendar' web/public/app.js
+          grep -q '.command-panel' web/public/styles.css
+          grep -q '.record-drawer' web/public/styles.css
+          grep -q '.kanban-board' web/public/styles.css
       - name: Runtime smoke test
         run: |
           cd web
