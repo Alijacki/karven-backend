@@ -98,12 +98,13 @@
   <section id="appView" class="app-layout hidden">
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-top">
-        <div class="sidebar-brand-row"><a class="brand brand-invert" href="#/app/home">KARVEN</a><button id="sidebarClose" class="sidebar-close" aria-label="Close sidebar">×</button></div>
+        <div class="sidebar-brand-row"><a class="brand brand-invert sidebar-wordmark" href="#/app/home">KARVEN</a><div class="sidebar-brand-actions"><button id="sidebarCollapse" class="sidebar-collapse" aria-label="Collapse sidebar" title="Collapse sidebar">⇤</button><button id="sidebarClose" class="sidebar-close" aria-label="Close sidebar">×</button></div></div>
         <button id="workspaceSwitcher" class="workspace-switcher">
           <span id="workspaceMark" class="workspace-mark">K</span>
           <span class="workspace-copy"><b id="workspaceName">Workspace</b><small id="workspaceRole">member</small></span>
           <span class="workspace-caret">⌄</span>
         </button>
+        <button id="sidebarSearch" class="sidebar-search" aria-label="Search KARVEN"><span class="sidebar-search-icon">⌕</span><span class="sidebar-search-copy">Search</span><kbd>/</kbd></button>
       </div>
 
       <nav id="appNav" class="app-nav" aria-label="Workspace">
@@ -125,6 +126,7 @@
         <button data-view="audit"><span>◌</span>Audit log</button>
       </nav>
 
+      <div id="sidebarResizeHandle" class="sidebar-resize-handle" aria-hidden="true"></div>
       <div class="sidebar-footer">
         <a id="controlLink" href="#" target="_blank" rel="noopener"><span>↗</span>KARVEN Control</a>
         <button id="signOutButton"><span>⇥</span>Sign out</button>
@@ -138,6 +140,7 @@
           <div><p class="breadcrumb">KARVEN / <span id="breadcrumb">Home</span></p><h1 id="pageTitle">Home</h1></div>
         </div>
         <div class="header-tools">
+          <button id="commandButton" class="command-trigger" aria-label="Open command menu"><span>⌕ Search</span><kbd>⌘K</kbd></button>
           <button id="quickCreateButton" class="button button-light button-compact">＋ Create</button>
           <div class="user-chip"><span id="userInitial">K</span><div><b id="userName">User</b><small id="userEmail"></small></div></div>
         </div>
@@ -146,6 +149,24 @@
     </div>
   </section>
 
+
+  <div id="commandLayer" class="command-layer hidden" aria-hidden="true">
+    <button id="commandBackdrop" class="command-backdrop" aria-label="Close command menu"></button>
+    <section id="commandPanel" class="command-panel" role="dialog" aria-modal="true" aria-label="KARVEN command menu">
+      <div class="command-search-row"><span class="command-search-icon">⌕</span><input id="commandSearch" class="command-search" autocomplete="off" placeholder="Search KARVEN or jump to a page…"><kbd>Esc</kbd></div>
+      <div id="commandResults" class="command-results"></div>
+      <div class="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open</span><span><kbd>Esc</kbd> Close</span></div>
+    </section>
+  </div>
+
+  <div id="recordDrawerLayer" class="drawer-layer hidden" aria-hidden="true">
+    <button id="recordDrawerBackdrop" class="drawer-backdrop" aria-label="Close details"></button>
+    <aside id="recordDrawer" class="record-drawer" role="dialog" aria-modal="true" aria-label="Record details">
+      <div class="drawer-header"><div><span id="drawerEyebrow" class="eyebrow">RECORD</span><h2 id="drawerTitle">Details</h2></div><button id="drawerClose" class="drawer-close" aria-label="Close">×</button></div>
+      <div id="drawerBody" class="drawer-body"></div>
+      <div id="drawerActions" class="drawer-actions"></div>
+    </aside>
+  </div>
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal-card"><button id="modalClose" class="modal-close" aria-label="Close">×</button><div id="modalBody"></div></div>
   </div>
