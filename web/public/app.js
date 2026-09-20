@@ -144,11 +144,282 @@
     $(".modal-card").classList.remove("wide");
   }
 
+
+  var commandState = { items: [], index: 0, recordsLoaded: false, loading: false };
+
+  function isAppVisible() {
+    return !appView.classList.contains("hidden");
+  }
+
+  function animatePage() {
+    appContent.classList.remove("page-enter");
+    void appContent.offsetWidth;
+    appContent.classList.add("page-enter");
+    window.setTimeout(function(){ appContent.classList.remove("page-enter"); }, 260);
+  }
+
+  function initSidebarSizing() {
+    var saved = Number(localStorage.getItem("karven_nav_width") || 244);
+    var width = Math.min(350, Math.max(180, saved || 244));
+    appView.style.setProperty("--nav-width", width + "px");
+    var collapsed = localStorage.getItem("karven_nav_collapsed") === "true";
+    appView.classList.toggle("nav-collapsed", collapsed);
+    updateSidebarCollapseLabel();
+
+    var collapse = $("#sidebarCollapse");
+    if (collapse) collapse.onclick = function() {
+      var next = !appView.classList.contains("nav-collapsed");
+      appView.classList.toggle("nav-collapsed", next);
+      localStorage.setItem("karven_nav_collapsed", String(next));
+      updateSidebarCollapseLabel();
+    };
+
+    var handle = $("#sidebarResizeHandle");
+    var sidebar = $("#sidebar");
+    if (!handle || !sidebar) return;
+    handle.addEventListener("pointerdown", function(e) {
+      if (window.innerWidth <= 1050 || appView.classList.contains("nav-collapsed")) return;
+      e.preventDefault();
+      sidebar.classList.add("is-resizing");
+      handle.setPointerCapture && handle.setPointerCapture(e.pointerId);
+      var onMove = function(ev) {
+        var nextWidth = Math.min(350, Math.max(180, ev.clientX));
+        appView.style.setProperty("--nav-width", nextWidth + "px");
+        localStorage.setItem("karven_nav_width", String(Math.round(nextWidth)));
+      };
+      var onUp = function() {
+        sidebar.classList.remove("is-resizing");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp, {once:true});
+    });
+  }
+
+  function updateSidebarCollapseLabel() {
+    var b = $("#sidebarCollapse");
+    if (!b) return;
+    var collapsed = appView.classList.contains("nav-collapsed");
+    b.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    b.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  }
+
+  function baseCommandItems() {
+    var nav = [
+      ["home","⌂","Home","Workspace overview"],
+      ["companies","▦","Companies","Customer accounts"],
+      ["people","◎","People","Contacts and relationships"],
+      ["opportunities","◇","Opportunities","Pipeline and revenue"],
+      ["tasks","✓","Tasks","Follow-ups and execution"],
+      ["pipelines","≋","Pipelines","Sales process stages"],
+      ["notes","✎","Notes","Shared context"],
+      ["activity","↻","Activity","Workspace history"],
+      ["files","▱","Files","Workspace files"],
+      ["team","♙","Team","Members and roles"],
+      ["billing","◫","Billing","Subscription and payments"],
+      ["settings","⚙","Settings","Workspace configuration"],
+      ["integrations","⌁","Webhooks","Integration endpoints"],
+      ["audit","◌","Audit log","Administrative history"]
+    ];
+    var out = nav.map(function(x){
+      return {group:"Navigate",icon:x[1],label:x[2],subtitle:x[3],hint:"Open",run:function(){closeCommandMenu();navigate(x[0]);}};
+    });
+    out.push(
+      {group:"Create",icon:"＋",label:"New company",subtitle:"Create a customer account",hint:"Create",run:function(){closeCommandMenu();companyForm();}},
+      {group:"Create",icon:"＋",label:"New person",subtitle:"Create a contact",hint:"Create",run:function(){closeCommandMenu();personForm();}},
+      {group:"Create",icon:"＋",label:"New opportunity",subtitle:"Create a deal",hint:"Create",run:function(){closeCommandMenu();opportunityForm();}},
+      {group:"Create",icon:"＋",label:"New task",subtitle:"Create a follow-up",hint:"Create",run:function(){closeCommandMenu();taskForm();}},
+      {group:"Workspace",icon:"⌘",label:"Switch workspace",subtitle:"Choose another KARVEN workspace",hint:"Open",run:function(){closeCommandMenu();workspaceModal();}}
+    );
+    return out;
+  }
+
+  async function loadCommandRecords() {
+    if (!wid() || commandState.loading) return;
+    commandState.loading = true;
+    try {
+      var results = await Promise.all([
+        api("/api/v1/workspaces/"+wid()+"/companies?limit=500"),
+        api("/api/v1/workspaces/"+wid()+"/contacts?limit=500"),
+        api("/api/v1/workspaces/"+wid()+"/opportunities?limit=500"),
+        api("/api/v1/workspaces/"+wid()+"/tasks?limit=500")
+      ]);
+      state.cache.companies = results[0].items || [];
+      state.cache.people = results[1].items || [];
+      state.cache.opportunities = results[2].items || [];
+      state.cache.tasks = results[3].items || [];
+      commandState.recordsLoaded = true;
+      renderCommandResults();
+    } catch (_) {
+      commandState.recordsLoaded = false;
+    } finally {
+      commandState.loading = false;
+    }
+  }
+
+  function recordCommandItems() {
+    var out=[];
+    (state.cache.companies||[]).forEach(function(x){
+      out.push({group:"Records",icon:"▦",label:x.name||"Company",subtitle:["Company",x.domain||x.email||""].filter(Boolean).join(" · "),recordKind:"company",record:x,hint:"Open"});
+    });
+    (state.cache.people||[]).forEach(function(x){
+      var n=[x.first_name,x.last_name].filter(Boolean).join(" ")||x.email||"Person";
+      out.push({group:"Records",icon:"◎",label:n,subtitle:["Person",x.company_name||x.job_title||x.email||""].filter(Boolean).join(" · "),recordKind:"person",record:x,hint:"Open"});
+    });
+    (state.cache.opportunities||[]).forEach(function(x){
+      out.push({group:"Records",icon:"◇",label:x.title||"Opportunity",subtitle:"Opportunity · "+money(x.amount_cents,x.currency),recordKind:"opportunity",record:x,hint:"Open"});
+    });
+    (state.cache.tasks||[]).forEach(function(x){
+      out.push({group:"Records",icon:"✓",label:x.title||"Task",subtitle:"Task · "+String(x.status||"todo").replace(/_/g," "),recordKind:"task",record:x,hint:"Open"});
+    });
+    out.forEach(function(item){
+      item.run=function(){closeCommandMenu();openRecordDrawer(item.recordKind,item.record);};
+    });
+    return out;
+  }
+
+  function commandItemsForQuery(query) {
+    var q=String(query||"").trim().toLowerCase();
+    var all=baseCommandItems().concat(recordCommandItems());
+    if(!q) return all.slice(0,24);
+    var terms=q.split(/\s+/).filter(Boolean);
+    return all.filter(function(item){
+      var hay=(item.label+" "+item.subtitle+" "+item.group).toLowerCase();
+      return terms.every(function(t){return hay.indexOf(t)!==-1;});
+    }).slice(0,40);
+  }
+
+  function renderCommandResults() {
+    var search=$("#commandSearch");
+    var container=$("#commandResults");
+    if(!container) return;
+    var q=search?search.value:"";
+    var items=commandItemsForQuery(q);
+    commandState.items=items;
+    commandState.index=Math.min(commandState.index,Math.max(0,items.length-1));
+    if(!items.length) {
+      container.innerHTML='<div class="command-empty">No matching KARVEN commands or records.</div>';
+      return;
+    }
+    var groups=[];
+    items.forEach(function(item){if(groups.indexOf(item.group)===-1)groups.push(item.group);});
+    var globalIndex=0;
+    container.innerHTML=groups.map(function(group){
+      var html='<div class="command-group"><div class="command-group-title">'+esc(group)+'</div>';
+      items.filter(function(x){return x.group===group;}).forEach(function(item){
+        var idx=globalIndex++;
+        html+='<button class="command-item '+(idx===commandState.index?"active":"")+'" data-command-index="'+idx+'"><span class="command-item-icon">'+esc(item.icon)+'</span><span class="command-item-copy"><b>'+esc(item.label)+'</b><small>'+esc(item.subtitle||"")+'</small></span><span class="command-item-hint">'+esc(item.hint||"")+'</span></button>';
+      });
+      return html+'</div>';
+    }).join("");
+    $("[data-command-index]",container).forEach(function(b){
+      b.onmouseenter=function(){commandState.index=Number(b.dataset.commandIndex);renderCommandResults();};
+      b.onclick=function(){var item=commandState.items[Number(b.dataset.commandIndex)];if(item&&item.run)item.run();};
+    });
+    var active=$(".command-item.active",container);
+    if(active) active.scrollIntoView({block:"nearest"});
+  }
+
+  function openCommandMenu() {
+    if(!isAppVisible()) return;
+    var layer=$("#commandLayer"),search=$("#commandSearch");
+    if(!layer) return;
+    layer.classList.remove("hidden");
+    layer.setAttribute("aria-hidden","false");
+    commandState.index=0;
+    window.requestAnimationFrame(function(){
+      layer.classList.add("open");
+      if(search){search.value="";search.focus();}
+      renderCommandResults();
+    });
+    loadCommandRecords();
+  }
+
+  function closeCommandMenu() {
+    var layer=$("#commandLayer");
+    if(!layer||layer.classList.contains("hidden"))return;
+    layer.classList.remove("open");
+    layer.setAttribute("aria-hidden","true");
+    window.setTimeout(function(){layer.classList.add("hidden");},220);
+  }
+
+  function executeActiveCommand() {
+    var item=commandState.items[commandState.index];
+    if(item&&item.run)item.run();
+  }
+
+  function drawerField(label,value,href) {
+    var safe=value==null||value===""?"—":String(value);
+    return '<div class="drawer-field"><span>'+esc(label)+'</span>'+(href?'<a href="'+esc(href)+'" target="_blank" rel="noopener">'+esc(safe)+'</a>':'<span>'+esc(safe)+'</span>')+'</div>';
+  }
+
+  function openRecordDrawer(kind,item) {
+    if(!item)return;
+    var layer=$("#recordDrawerLayer"),body=$("#drawerBody"),actions=$("#drawerActions");
+    var title="Record",eyebrow=String(kind||"record").toUpperCase(),html="";
+    if(kind==="company"){
+      title=item.name||"Company";
+      html='<section class="drawer-section"><div class="drawer-section-title">Company details</div>'+
+        drawerField("Domain",item.domain)+drawerField("Email",item.email,item.email?"mailto:"+item.email:null)+drawerField("Phone",item.phone,item.phone?"tel:"+item.phone:null)+drawerField("Website",item.website,item.website||null)+drawerField("Updated",dateTime(item.updated_at))+'</section>';
+      actions.innerHTML='<button class="button button-light button-compact" id="drawerDelete">Delete</button><button class="button button-dark button-compact" id="drawerEdit">Edit company</button>';
+    } else if(kind==="person"){
+      title=[item.first_name,item.last_name].filter(Boolean).join(" ")||item.email||"Person";
+      html='<section class="drawer-section"><div class="drawer-section-title">Person details</div>'+
+        drawerField("Company",item.company_name)+drawerField("Role",item.job_title)+drawerField("Email",item.email,item.email?"mailto:"+item.email:null)+drawerField("Phone",item.phone,item.phone?"tel:"+item.phone:null)+drawerField("Updated",dateTime(item.updated_at))+'</section>';
+      actions.innerHTML='<button class="button button-light button-compact" id="drawerDelete">Delete</button><button class="button button-dark button-compact" id="drawerEdit">Edit person</button>';
+    } else if(kind==="opportunity"){
+      title=item.title||"Opportunity";
+      html='<section class="drawer-section"><div class="drawer-section-title">Opportunity details</div>'+
+        drawerField("Value",money(item.amount_cents,item.currency))+drawerField("Status",String(item.status||"").replace(/_/g," "))+drawerField("Probability",Number(item.probability||0)+"%")+drawerField("Expected close",date(item.expected_close_date))+drawerField("Updated",dateTime(item.updated_at))+'</section>';
+      actions.innerHTML='<button class="button button-dark button-compact" id="drawerEdit">Edit opportunity</button>';
+    } else if(kind==="task"){
+      title=item.title||"Task";
+      html='<section class="drawer-section"><div class="drawer-section-title">Task details</div>'+
+        drawerField("Status",String(item.status||"").replace(/_/g," "))+drawerField("Priority",item.priority)+drawerField("Due",dateTime(item.due_at))+drawerField("Created",dateTime(item.created_at))+'</section>'+
+        '<section class="drawer-section"><div class="drawer-section-title">Description</div><div class="drawer-description">'+esc(item.description||"No description")+'</div></section>';
+      actions.innerHTML='<button class="button button-dark button-compact" id="drawerEdit">Edit task</button>';
+    }
+    $("#drawerEyebrow").textContent=eyebrow;
+    $("#drawerTitle").textContent=title;
+    body.innerHTML=html;
+    $("[data-record-id]",appContent).forEach(function(el){el.classList.toggle("is-selected",el.dataset.recordId===String(item.id));});
+    layer.classList.remove("hidden");
+    layer.setAttribute("aria-hidden","false");
+    window.requestAnimationFrame(function(){layer.classList.add("open");});
+    var edit=$("#drawerEdit");
+    if(edit) edit.onclick=function(){
+      closeRecordDrawer();
+      if(kind==="company")companyForm(item);
+      if(kind==="person")personForm(item);
+      if(kind==="opportunity")opportunityForm(item);
+      if(kind==="task")taskForm(item);
+    };
+    var del=$("#drawerDelete");
+    if(del) del.onclick=function(){
+      closeRecordDrawer();
+      if(kind==="company")confirmDelete("company",item.id,function(){return api("/api/v1/workspaces/"+wid()+"/companies/"+item.id,{method:"DELETE"});},function(){renderCompanies();});
+      if(kind==="person")confirmDelete("person",item.id,function(){return api("/api/v1/workspaces/"+wid()+"/contacts/"+item.id,{method:"DELETE"});},function(){renderPeople();});
+    };
+  }
+
+  function closeRecordDrawer() {
+    var layer=$("#recordDrawerLayer");
+    if(!layer||layer.classList.contains("hidden"))return;
+    layer.classList.remove("open");
+    layer.setAttribute("aria-hidden","true");
+    $("[data-record-id]",appContent).forEach(function(el){el.classList.remove("is-selected");});
+    window.setTimeout(function(){layer.classList.add("hidden");$("#drawerBody").innerHTML="";$("#drawerActions").innerHTML="";},220);
+  }
+
+
   $("#modalClose").addEventListener("click", closeModal);
   modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
 
   function loading() {
-    appContent.innerHTML = '<div class="loading-state">Loading KARVEN…</div>';
+    appContent.innerHTML = '<div class="skeleton-layout"><div class="skeleton-stats">'+
+      '<div class="skeleton-card"><span class="skeleton-line short"></span><span class="skeleton-line medium"></span></div>'.repeat(4)+
+      '</div><span class="skeleton-block"></span></div>';
   }
 
   function empty(title, body, actionLabel, action) {
@@ -383,7 +654,7 @@
       tasks:renderTasks, pipelines:renderPipelines, notes:renderNotes, activity:renderActivity, files:renderFiles,
       team:renderTeam, billing:renderBilling, settings:renderSettings, integrations:renderWebhooks, audit:renderAudit
     };
-    try { await renderers[view](); }
+    try { await renderers[view](); animatePage(); }
     catch (e) {
       if (e.status === 403) appContent.innerHTML = empty("Access restricted","Your workspace role does not allow this view.");
       else {
@@ -443,6 +714,7 @@
     query = query || "";
     var d = await api("/api/v1/workspaces/" + wid() + "/companies?limit=500&q=" + encodeURIComponent(query));
     var items = d.items || [];
+    state.cache.companies = items;
     appContent.innerHTML = pageTop("Customer accounts in " + state.workspace.name,
       '<input id="companySearch" class="search-input" placeholder="Search companies" value="' + esc(query) + '"><button id="newCompany" class="button button-dark button-compact">＋ Company</button>') +
       '<section class="card">' + (items.length ? companiesTable(items) : empty("No companies yet","Create the first customer account in this workspace.","Add company","company")) + '</section>';
@@ -455,9 +727,10 @@
   }
 
   function companiesTable(items) {
-    return '<div class="table-scroll"><table class="data-table"><thead><tr><th>Company</th><th>Domain</th><th>Email</th><th>Phone</th><th>Updated</th><th></th></tr></thead><tbody>' +
+    return '<div class="table-toolbar"><div class="table-toolbar-left"><span class="density-chip">'+items.length+' records</span></div><div class="table-toolbar-right"><span class="density-chip">Compact</span></div></div>'+
+      '<div class="table-scroll"><table class="data-table"><thead><tr><th>Company</th><th>Domain</th><th>Email</th><th>Phone</th><th>Updated</th><th></th></tr></thead><tbody>' +
       items.map(function (x) {
-        return '<tr><td><span class="table-title">' + esc(x.name) + '</span><span class="table-sub">' + esc(x.website || "No website") + '</span></td><td>' + esc(x.domain || "—") + '</td><td>' + esc(x.email || "—") + '</td><td>' + esc(x.phone || "—") + '</td><td>' + esc(date(x.updated_at)) + '</td><td><div class="row-actions"><button class="icon-button" data-edit-company="' + esc(x.id) + '">Edit</button><button class="icon-button danger" data-delete-company="' + esc(x.id) + '">Delete</button></div></td></tr>';
+        return '<tr class="record-row" data-record-kind="company" data-record-id="' + esc(x.id) + '"><td><span class="table-title">' + esc(x.name) + '</span><span class="table-sub">' + esc(x.website || "No website") + '</span></td><td>' + esc(x.domain || "—") + '</td><td>' + esc(x.email || "—") + '</td><td>' + esc(x.phone || "—") + '</td><td>' + esc(date(x.updated_at)) + '</td><td><div class="row-actions"><button class="icon-button" data-edit-company="' + esc(x.id) + '">Edit</button><button class="icon-button danger" data-delete-company="' + esc(x.id) + '">Delete</button></div></td></tr>';
       }).join("") + '</tbody></table></div>';
   }
 
@@ -482,6 +755,7 @@
     query = query || "";
     var d = await api("/api/v1/workspaces/" + wid() + "/contacts?limit=500&q=" + encodeURIComponent(query));
     var items = d.items || [];
+    state.cache.people = items;
     appContent.innerHTML = pageTop("People connected to your customer relationships.",
       '<input id="peopleSearch" class="search-input" placeholder="Search people" value="' + esc(query) + '"><button id="newPerson" class="button button-dark button-compact">＋ Person</button>') +
       '<section class="card">' + (items.length ? peopleTable(items) : empty("No people yet","Add the first contact to this workspace.","Add person","person")) + '</section>';
@@ -493,8 +767,9 @@
   }
 
   function peopleTable(items) {
-    return '<div class="table-scroll"><table class="data-table"><thead><tr><th>Person</th><th>Company</th><th>Role</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody>' +
-      items.map(function(x){var name=[x.first_name,x.last_name].filter(Boolean).join(" ") || "Unnamed";return '<tr><td><span class="table-title">'+esc(name)+'</span></td><td>'+esc(x.company_name||"—")+'</td><td>'+esc(x.job_title||"—")+'</td><td>'+esc(x.email||"—")+'</td><td>'+esc(x.phone||"—")+'</td><td><div class="row-actions"><button class="icon-button" data-edit-person="'+esc(x.id)+'">Edit</button><button class="icon-button danger" data-delete-person="'+esc(x.id)+'">Delete</button></div></td></tr>';}).join("") +
+    return '<div class="table-toolbar"><div class="table-toolbar-left"><span class="density-chip">'+items.length+' records</span></div><div class="table-toolbar-right"><span class="density-chip">Compact</span></div></div>'+
+      '<div class="table-scroll"><table class="data-table"><thead><tr><th>Person</th><th>Company</th><th>Role</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody>' +
+      items.map(function(x){var name=[x.first_name,x.last_name].filter(Boolean).join(" ") || "Unnamed";return '<tr class="record-row" data-record-kind="person" data-record-id="'+esc(x.id)+'"><td><span class="table-title">'+esc(name)+'</span></td><td>'+esc(x.company_name||"—")+'</td><td>'+esc(x.job_title||"—")+'</td><td>'+esc(x.email||"—")+'</td><td>'+esc(x.phone||"—")+'</td><td><div class="row-actions"><button class="icon-button" data-edit-person="'+esc(x.id)+'">Edit</button><button class="icon-button danger" data-delete-person="'+esc(x.id)+'">Delete</button></div></td></tr>';}).join("") +
       '</tbody></table></div>';
   }
 
@@ -511,17 +786,73 @@
   }
 
   async function renderOpportunities() {
-    var d=await api("/api/v1/workspaces/"+wid()+"/opportunities?limit=500"),items=d.items||[];
-    appContent.innerHTML=pageTop("Track active revenue and deal progress.",'<button id="newOpportunity" class="button button-dark button-compact">＋ Opportunity</button>')+'<section class="card">'+(items.length?opportunitiesTable(items,true):empty("No opportunities yet","Create the first commercial opportunity.","Add opportunity","opportunity"))+'</section>';
-    $("#newOpportunity").onclick=function(){opportunityForm();};bindEmptyActions();
-    $$("[data-edit-opportunity]",appContent).forEach(function(b){b.onclick=function(){opportunityForm(items.find(function(x){return x.id===b.dataset.editOpportunity;}));};});
+    var data=await Promise.all([
+      api("/api/v1/workspaces/"+wid()+"/opportunities?limit=500"),
+      api("/api/v1/workspaces/"+wid()+"/pipelines")
+    ]);
+    var items=data[0].items||[],pipelines=data[1].items||[];
+    state.cache.opportunities=items;
+    state.cache.pipelines=pipelines;
+    var view=localStorage.getItem("karven_opportunity_view")||"table";
+    var toggle='<div class="view-toggle"><button data-op-view="table" class="'+(view==="table"?"active":"")+'">Table</button><button data-op-view="kanban" class="'+(view==="kanban"?"active":"")+'">Kanban</button></div>';
+    appContent.innerHTML=pageTop("Track active revenue and deal progress.",toggle+'<button id="newOpportunity" class="button button-dark button-compact">＋ Opportunity</button>')+
+      (view==="kanban"?renderOpportunityKanban(items,pipelines):'<section class="card">'+(items.length?opportunitiesTable(items,true):empty("No opportunities yet","Create the first commercial opportunity.","Add opportunity","opportunity"))+'</section>');
+    $("#newOpportunity").onclick=function(){opportunityForm();};
+    bindEmptyActions();
+    $$("[data-op-view]",appContent).forEach(function(b){b.onclick=function(){localStorage.setItem("karven_opportunity_view",b.dataset.opView);renderOpportunities();};});
+    $$("[data-edit-opportunity]",appContent).forEach(function(b){b.onclick=function(e){e.stopPropagation();opportunityForm(items.find(function(x){return x.id===b.dataset.editOpportunity;}));};});
+    if(view==="kanban")bindOpportunityKanban(items,pipelines);
   }
 
   function opportunitiesTable(items,actions) {
     if(!items.length)return empty("No opportunities yet","Pipeline work will appear here.");
-    return '<div class="table-scroll"><table class="data-table"><thead><tr><th>Opportunity</th><th>Value</th><th>Status</th><th>Probability</th><th>Close date</th>'+(actions?'<th></th>':'')+'</tr></thead><tbody>'+
-      items.map(function(x){return '<tr><td><span class="table-title">'+esc(x.title)+'</span></td><td>'+esc(money(x.amount_cents,x.currency))+'</td><td>'+badge(x.status)+'</td><td>'+esc(Number(x.probability||0)+"%")+'</td><td>'+esc(date(x.expected_close_date))+'</td>'+(actions?'<td><div class="row-actions"><button class="icon-button" data-edit-opportunity="'+esc(x.id)+'">Edit</button></div></td>':'')+'</tr>';}).join("")+
+    return '<div class="table-toolbar"><div class="table-toolbar-left"><span class="density-chip">'+items.length+' records</span></div><div class="table-toolbar-right"><span class="density-chip">Revenue view</span></div></div>'+
+      '<div class="table-scroll"><table class="data-table"><thead><tr><th>Opportunity</th><th>Value</th><th>Status</th><th>Probability</th><th>Close date</th>'+(actions?'<th></th>':'')+'</tr></thead><tbody>'+
+      items.map(function(x){return '<tr class="record-row" data-record-kind="opportunity" data-record-id="'+esc(x.id)+'"><td><span class="table-title">'+esc(x.title)+'</span></td><td>'+esc(money(x.amount_cents,x.currency))+'</td><td>'+badge(x.status)+'</td><td>'+esc(Number(x.probability||0)+"%")+'</td><td>'+esc(date(x.expected_close_date))+'</td>'+(actions?'<td><div class="row-actions"><button class="icon-button" data-edit-opportunity="'+esc(x.id)+'">Edit</button></div></td>':'')+'</tr>';}).join("")+
       '</tbody></table></div>';
+  }
+
+  function renderOpportunityKanban(items,pipelines) {
+    var pipeline=pipelines.find(function(p){return p.is_default;})||pipelines[0]||null;
+    var columns=[];
+    if(pipeline&&pipeline.stages&&pipeline.stages.length){
+      columns=pipeline.stages.map(function(s){return {key:s.id,label:s.name,pipelineId:pipeline.id,stageId:s.id,probability:s.probability,items:items.filter(function(x){return x.stage_id===s.id;})};});
+      var unassigned=items.filter(function(x){return !x.stage_id;});
+      if(unassigned.length)columns.unshift({key:"unassigned",label:"Unassigned",pipelineId:pipeline.id,stageId:null,probability:0,items:unassigned});
+    } else {
+      ["open","won","lost","archived"].forEach(function(status){columns.push({key:status,label:status,status:status,items:items.filter(function(x){return x.status===status;})});});
+    }
+    return '<div class="kanban-shell"><div class="kanban-board">'+columns.map(function(col){
+      var total=col.items.reduce(function(s,x){return s+Number(x.amount_cents||0);},0);
+      return '<section class="kanban-column" data-kanban-key="'+esc(col.key)+'" '+(col.stageId!==undefined?'data-stage-id="'+esc(col.stageId||"")+'" data-pipeline-id="'+esc(col.pipelineId||"")+'" data-probability="'+esc(col.probability||0)+'"':'data-status="'+esc(col.status||"")+'"')+'><div class="kanban-column-head"><b>'+esc(col.label)+'</b><span>'+col.items.length+' · '+esc(money(total,col.items[0]&&col.items[0].currency||"USD"))+'</span></div><div class="kanban-list">'+
+        col.items.map(function(x){return '<article class="kanban-card record-row" draggable="true" data-opportunity-id="'+esc(x.id)+'" data-record-kind="opportunity" data-record-id="'+esc(x.id)+'"><div class="kanban-card-title">'+esc(x.title)+'</div><div class="kanban-card-meta"><span>'+esc(money(x.amount_cents,x.currency))+'</span><span>'+esc(Number(x.probability||0)+"%")+'</span></div><div class="kanban-card-prob"><span style="width:'+Math.max(0,Math.min(100,Number(x.probability||0)))+'%"></span></div></article>';}).join("")+
+        '</div></section>';
+    }).join("")+'</div></div>';
+  }
+
+  function bindOpportunityKanban(items,pipelines) {
+    var draggingId=null;
+    $$(".kanban-card",appContent).forEach(function(card){
+      card.addEventListener("dragstart",function(e){draggingId=card.dataset.opportunityId;card.classList.add("is-dragging");if(e.dataTransfer)e.dataTransfer.effectAllowed="move";});
+      card.addEventListener("dragend",function(){card.classList.remove("is-dragging");$$(".kanban-column",appContent).forEach(function(c){c.classList.remove("is-over");});});
+    });
+    $$(".kanban-column",appContent).forEach(function(col){
+      col.addEventListener("dragover",function(e){e.preventDefault();col.classList.add("is-over");});
+      col.addEventListener("dragleave",function(e){if(!col.contains(e.relatedTarget))col.classList.remove("is-over");});
+      col.addEventListener("drop",async function(e){
+        e.preventDefault();col.classList.remove("is-over");if(!draggingId)return;
+        var item=items.find(function(x){return x.id===draggingId;});if(!item)return;
+        var body={};
+        if(col.dataset.status)body.status=col.dataset.status;
+        else {
+          body.pipelineId=col.dataset.pipelineId||null;
+          body.stageId=col.dataset.stageId||null;
+          body.probability=Number(col.dataset.probability||0);
+        }
+        try{await api("/api/v1/workspaces/"+wid()+"/opportunities/"+item.id,{method:"PATCH",body:body});notify("Opportunity moved","success");renderOpportunities();}
+        catch(_){notify("Could not move opportunity","error");}
+      });
+    });
   }
 
   async function opportunityForm(item) {
@@ -545,14 +876,16 @@
 
   async function renderTasks() {
     var d=await api("/api/v1/workspaces/"+wid()+"/tasks?limit=500"),items=d.items||[];
+    state.cache.tasks=items;
     appContent.innerHTML=pageTop("Follow-ups and accountable work across the workspace.",'<button id="newTask" class="button button-dark button-compact">＋ Task</button>')+'<section class="card">'+(items.length?tasksTable(items):empty("No tasks yet","Create the first follow-up or workspace task.","Add task","task"))+'</section>';
     $("#newTask").onclick=function(){taskForm();};bindEmptyActions();
     $$("[data-edit-task]",appContent).forEach(function(b){b.onclick=function(){taskForm(items.find(function(x){return x.id===b.dataset.editTask;}));};});
   }
 
   function tasksTable(items) {
-    return '<div class="table-scroll"><table class="data-table"><thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Due</th><th></th></tr></thead><tbody>'+
-      items.map(function(x){return '<tr><td><span class="table-title">'+esc(x.title)+'</span><span class="table-sub">'+esc(x.description||"")+'</span></td><td>'+badge(x.status)+'</td><td>'+badge(x.priority)+'</td><td>'+esc(dateTime(x.due_at))+'</td><td><div class="row-actions"><button class="icon-button" data-edit-task="'+esc(x.id)+'">Edit</button></div></td></tr>';}).join("")+'</tbody></table></div>';
+    return '<div class="table-toolbar"><div class="table-toolbar-left"><span class="density-chip">'+items.length+' records</span></div><div class="table-toolbar-right"><span class="density-chip">Due date order</span></div></div>'+
+      '<div class="table-scroll"><table class="data-table"><thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Due</th><th></th></tr></thead><tbody>'+
+      items.map(function(x){return '<tr class="record-row" data-record-kind="task" data-record-id="'+esc(x.id)+'"><td><span class="table-title">'+esc(x.title)+'</span><span class="table-sub">'+esc(x.description||"")+'</span></td><td>'+badge(x.status)+'</td><td>'+badge(x.priority)+'</td><td>'+esc(dateTime(x.due_at))+'</td><td><div class="row-actions"><button class="icon-button" data-edit-task="'+esc(x.id)+'">Edit</button></div></td></tr>';}).join("")+'</tbody></table></div>';
   }
 
   function taskForm(item) {
@@ -736,6 +1069,44 @@
   $("#sidebarClose").onclick=function(){$("#sidebar").classList.remove("open");};
   $("#signOutButton").onclick=async function(){try{if(state.refresh)await api("/api/v1/auth/logout",{method:"POST",body:{refreshToken:state.refresh},noAuth:true});}catch(_){}clearSession();renderPublic("/",true);};
 
+  $("#commandButton").onclick=openCommandMenu;
+  $("#commandBackdrop").onclick=closeCommandMenu;
+  $("#recordDrawerBackdrop").onclick=closeRecordDrawer;
+  $("#drawerClose").onclick=closeRecordDrawer;
+  $("#commandSearch").addEventListener("input",function(){commandState.index=0;renderCommandResults();});
+  $("#commandSearch").addEventListener("keydown",function(e){
+    if(e.key==="ArrowDown"){e.preventDefault();commandState.index=Math.min(commandState.items.length-1,commandState.index+1);renderCommandResults();}
+    if(e.key==="ArrowUp"){e.preventDefault();commandState.index=Math.max(0,commandState.index-1);renderCommandResults();}
+    if(e.key==="Enter"){e.preventDefault();executeActiveCommand();}
+    if(e.key==="Escape"){e.preventDefault();closeCommandMenu();}
+  });
+
+  appContent.addEventListener("click",function(e){
+    if(e.target.closest("button,a,input,select,textarea"))return;
+    var row=e.target.closest("[data-record-kind][data-record-id]");
+    if(!row)return;
+    var kind=row.dataset.recordKind,id=row.dataset.recordId,item=null;
+    if(kind==="company")item=(state.cache.companies||[]).find(function(x){return x.id===id;});
+    if(kind==="person")item=(state.cache.people||[]).find(function(x){return x.id===id;});
+    if(kind==="opportunity")item=(state.cache.opportunities||[]).find(function(x){return x.id===id;});
+    if(kind==="task")item=(state.cache.tasks||[]).find(function(x){return x.id===id;});
+    if(item)openRecordDrawer(kind,item);
+  });
+
+  document.addEventListener("keydown",function(e){
+    var tag=document.activeElement&&document.activeElement.tagName;
+    var typing=tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"||document.activeElement&&document.activeElement.isContentEditable;
+    if((e.metaKey||e.ctrlKey)&&String(e.key).toLowerCase()==="k"){
+      e.preventDefault();if($("#commandLayer").classList.contains("hidden"))openCommandMenu();else closeCommandMenu();return;
+    }
+    if(e.key==="/"&&!typing&&isAppVisible()){e.preventDefault();openCommandMenu();return;}
+    if(e.key==="Escape"){
+      if(!$("#commandLayer").classList.contains("hidden")){closeCommandMenu();return;}
+      if(!$("#recordDrawerLayer").classList.contains("hidden")){closeRecordDrawer();return;}
+      if(!modal.classList.contains("hidden")){closeModal();return;}
+    }
+  });
+
   $("#appNav").addEventListener("click",function(e){var b=e.target.closest("[data-view]");if(!b)return;$("#sidebar").classList.remove("open");navigate(b.dataset.view);});
   $("#siteMenuButton").onclick=function(){$(".site-nav").classList.toggle("open");};
 
@@ -750,6 +1121,7 @@
 
   async function start() {
     checkPublicStatus();
+    initSidebarSizing();
     var params=new URLSearchParams(location.search);
     if(location.pathname==="/reset-password"&&params.get("token")){openAuth("reset");return;}
     if(state.access&&await bootstrapSession()){enterApp("home");return;}
