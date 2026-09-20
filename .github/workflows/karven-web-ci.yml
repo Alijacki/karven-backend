@@ -1,0 +1,41 @@
+name: KARVEN Web CI
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/karven-web-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/karven-web-ci.yml"
+
+jobs:
+  verify-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax check
+        run: |
+          node --check web/server.js
+          node --check web/public/app.js
+      - name: Runtime smoke test
+        run: |
+          cd web
+          PORT=3999 KARVEN_API_URL=https://example.invalid node server.js > /tmp/karven-web.log 2>&1 &
+          echo $! > /tmp/karven-web.pid
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:3999/healthz; then
+              kill $(cat /tmp/karven-web.pid)
+              exit 0
+            fi
+            sleep 0.25
+          done
+          cat /tmp/karven-web.log
+          kill $(cat /tmp/karven-web.pid) || true
+          exit 1

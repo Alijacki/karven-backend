@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b0b0d">
+  <title>KARVEN — CRM built for focused teams</title>
+  <meta name="description" content="KARVEN is a focused CRM workspace for companies, contacts, opportunities, tasks and team operations.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <section id="publicView">
+    <nav class="public-nav">
+      <a class="brand" href="/">KARVEN</a>
+      <div class="nav-actions">
+        <button class="ghost-btn" data-auth="login">Sign in</button>
+        <button class="primary-btn compact" data-auth="register">Get started</button>
+      </div>
+    </nav>
+
+    <main class="landing">
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">CUSTOMER OPERATIONS, WITHOUT THE NOISE</div>
+          <h1>Build stronger customer relationships from one calm workspace.</h1>
+          <p>KARVEN brings companies, contacts, deals, tasks and your team into a single focused system designed to stay fast as you grow.</p>
+          <div class="hero-actions">
+            <button class="primary-btn" data-auth="register">Start with KARVEN</button>
+            <button class="secondary-btn" data-auth="login">Sign in</button>
+          </div>
+          <div class="trust-row"><span>Native KARVEN API</span><span>Role-based workspaces</span><span>Production-ready data layer</span></div>
+        </div>
+        <div class="hero-panel">
+          <div class="panel-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><strong>Pipeline</strong></div>
+          <div class="metric-grid">
+            <div><small>Open pipeline</small><b>$184,240</b><span>12 opportunities</span></div>
+            <div><small>Companies</small><b>128</b><span>+14 this month</span></div>
+          </div>
+          <div class="fake-list">
+            <div><span class="avatar">AC</span><p><b>Acme Collective</b><small>Enterprise · Negotiation</small></p><strong>$42k</strong></div>
+            <div><span class="avatar">NO</span><p><b>Northstar Ops</b><small>Growth · Proposal</small></p><strong>$28k</strong></div>
+            <div><span class="avatar">AL</span><p><b>Atlas Labs</b><small>Startup · Discovery</small></p><strong>$16k</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="features">
+        <article><span>01</span><h3>Customer context</h3><p>Keep companies and people connected to the work that matters.</p></article>
+        <article><span>02</span><h3>Pipeline clarity</h3><p>Track opportunities from first conversation through close.</p></article>
+        <article><span>03</span><h3>Team execution</h3><p>Turn follow-ups into visible, accountable tasks.</p></article>
+      </section>
+    </main>
+
+    <footer class="public-footer"><span>KARVEN</span><span>© 2026 KARVEN. All rights reserved.</span></footer>
+  </section>
+
+  <section id="authView" class="auth-page hidden">
+    <button id="backHome" class="back-link">← Back</button>
+    <div class="auth-card">
+      <div class="brand big">KARVEN</div>
+      <div id="loginFormWrap">
+        <h2>Welcome back</h2><p>Sign in to your workspace.</p>
+        <form id="loginForm">
+          <label>Email<input name="email" type="email" autocomplete="email" required></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+          <button class="primary-btn full" type="submit">Sign in</button>
+        </form>
+        <button class="text-btn" data-switch="register">Create a KARVEN account</button>
+      </div>
+      <div id="registerFormWrap" class="hidden">
+        <h2>Create your workspace</h2><p>Set up KARVEN in under a minute.</p>
+        <form id="registerForm">
+          <label>Full name<input name="fullName" required maxlength="160"></label>
+          <label>Work email<input name="email" type="email" autocomplete="email" required></label>
+          <label>Workspace name<input name="workspaceName" required maxlength="160"></label>
+          <label>Password<input name="password" type="password" minlength="10" autocomplete="new-password" required><small>At least 10 characters</small></label>
+          <button class="primary-btn full" type="submit">Create workspace</button>
+        </form>
+        <button class="text-btn" data-switch="login">I already have an account</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">KARVEN</div>
+      <button id="workspaceButton" class="workspace-button"><span class="workspace-mark">K</span><span><b id="workspaceName">Workspace</b><small id="workspaceRole">member</small></span></button>
+      <nav id="sideNav">
+        <button data-view="dashboard" class="active"><span>⌂</span>Home</button>
+        <div class="nav-label">CRM</div>
+        <button data-view="companies"><span>▦</span>Companies</button>
+        <button data-view="contacts"><span>◎</span>People</button>
+        <button data-view="opportunities"><span>◫</span>Opportunities</button>
+        <button data-view="tasks"><span>✓</span>Tasks</button>
+        <div class="nav-label">Workspace</div>
+        <button data-view="team"><span>♙</span>Team</button>
+        <button data-view="settings"><span>⚙</span>Settings</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <a id="adminLink" href="#" target="_blank" rel="noopener">KARVEN Control ↗</a>
+        <button id="logoutBtn">Sign out</button>
+      </div>
+    </aside>
+    <main class="app-main">
+      <header class="app-header">
+        <button id="mobileMenu" class="mobile-menu">☰</button>
+        <div><p class="breadcrumb">KARVEN / <span id="breadcrumb">Home</span></p><h1 id="pageTitle">Home</h1></div>
+        <div class="header-user"><span id="userInitial">K</span><div><b id="userName">User</b><small id="userEmail"></small></div></div>
+      </header>
+      <div id="content" class="content"></div>
+    </main>
+  </section>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true"><div class="modal-card"><button id="modalClose" class="modal-close">×</button><div id="modalBody"></div></div></div>
+
+  <script src="/runtime-config.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
