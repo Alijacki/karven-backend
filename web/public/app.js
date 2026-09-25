@@ -208,6 +208,7 @@
   function baseCommandItems() {
     var nav = [
       ["home","⌂","Home","Workspace overview"],
+      ["reports","▥","Reports","Live pipeline and workload metrics"],
       ["companies","▦","Companies","Customer accounts"],
       ["people","◎","People","Contacts and relationships"],
       ["opportunities","◇","Opportunities","Pipeline and revenue"],
@@ -220,7 +221,8 @@
       ["billing","◫","Billing","Subscription and payments"],
       ["settings","⚙","Settings","Workspace configuration"],
       ["integrations","⌁","Webhooks","Integration endpoints"],
-      ["audit","◌","Audit log","Administrative history"]
+      ["audit","◌","Audit log","Administrative history"],
+      ["data","⇅","Import & export","Move workspace data with CSV"]
     ];
     var out = nav.map(function(x){
       return {group:"Navigate",icon:x[1],label:x[2],subtitle:x[3],hint:"Open",run:function(){closeCommandMenu();navigate(x[0]);}};
@@ -638,9 +640,9 @@
   }
 
   var titles = {
-    home:"Home", companies:"Companies", people:"People", opportunities:"Opportunities", tasks:"Tasks",
+    home:"Home", reports:"Reports", companies:"Companies", people:"People", opportunities:"Opportunities", tasks:"Tasks",
     pipelines:"Pipelines", notes:"Notes", activity:"Activity", files:"Files", team:"Team", billing:"Billing",
-    settings:"Settings", integrations:"Webhooks", audit:"Audit log"
+    settings:"Settings", integrations:"Webhooks", audit:"Audit log", data:"Import & export"
   };
 
   async function navigate(view) {
@@ -651,9 +653,9 @@
     $("#breadcrumb").textContent = titles[view];
     loading();
     var renderers = {
-      home:renderHome, companies:renderCompanies, people:renderPeople, opportunities:renderOpportunities,
+      home:renderHome, reports:renderReports, companies:renderCompanies, people:renderPeople, opportunities:renderOpportunities,
       tasks:renderTasks, pipelines:renderPipelines, notes:renderNotes, activity:renderActivity, files:renderFiles,
-      team:renderTeam, billing:renderBilling, settings:renderSettings, integrations:renderWebhooks, audit:renderAudit
+      team:renderTeam, billing:renderBilling, settings:renderSettings, integrations:renderWebhooks, audit:renderAudit, data:renderDataTools
     };
     try { await renderers[view](); animatePage(); }
     catch (e) {
@@ -706,6 +708,146 @@
 
   function stat(label,value,foot) {
     return '<article class="stat-card"><span class="stat-label">' + esc(label) + '</span><strong class="stat-value">' + esc(value) + '</strong><span class="stat-foot">' + esc(foot) + '</span></article>';
+  }
+
+  function reportRange(items, days) {
+    if (!days) return items;
+    var cutoff = Date.now() - days * 86400000;
+    return items.filter(function (item) {
+      var stamp = item.created_at || item.updated_at;
+      if (!stamp) return true;
+      var time = new Date(stamp).getTime();
+      return !Number.isFinite(time) || time >= cutoff;
+    });
+  }
+
+  function reportWidth(value, max) {
+    return "w" + Math.max(1,Math.min(5,Math.ceil(Number(value||0)/Math.max(Number(max||0),1)*5)));
+  }
+
+  function exportCsv(filename, rows) {
+    if (!rows.length) { notify("There is no data to export", "error"); return; }
+    var columns = Object.keys(rows[0]);
+    var quote = function (value) { var text=String(value == null ? "" : value);if(/^[=+@\-\t\r]/.test(text))text="'"+text;return '"' + text.replace(/"/g, '""') + '"'; };
+    var content = [columns.map(quote).join(",")].concat(rows.map(function (row) { return columns.map(function (key) { return quote(row[key]); }).join(","); })).join("\r\n");
+    var url = URL.createObjectURL(new Blob(["\ufeff" + content], {type:"text/csv;charset=utf-8"}));
+    var link = document.createElement("a"); link.href = url; link.download = filename; link.click();
+    window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  async function renderReports() {
+    var results = await Promise.all([
+      api("/api/v1/workspaces/" + wid() + "/companies?limit=500"),
+      api("/api/v1/workspaces/" + wid() + "/contacts?limit=500"),
+      api("/api/v1/workspaces/" + wid() + "/opportunities?limit=500"),
+      api("/api/v1/workspaces/" + wid() + "/tasks?limit=500"),
+      api("/api/v1/workspaces/" + wid() + "/pipelines")
+    ]);
+    var companies=results[0].items||[], people=results[1].items||[];
+    var allOps=results[2].items||[], allTasks=results[3].items||[], pipelines=results[4].items||[];
+    var range=Number(localStorage.getItem("karven_report_range")||0);
+    var ops=reportRange(allOps,range), tasks=reportRange(allTasks,range);
+    state.cache.companies=companies;state.cache.people=people;state.cache.opportunities=ops;state.cache.tasks=tasks;
+    var openOps=ops.filter(function(x){return x.status==="open";});
+    var wonOps=ops.filter(function(x){return x.status==="won";});
+    var openValue=openOps.reduce(function(sum,x){return sum+Number(x.amount_cents||0);},0);
+    var weightedValue=openOps.reduce(function(sum,x){return sum+Number(x.amount_cents||0)*Math.max(0,Math.min(100,Number(x.probability||0)))/100;},0);
+    var now=Date.now(), openTasks=tasks.filter(function(x){return x.status!=="done"&&x.status!=="cancelled";});
+    var overdue=openTasks.filter(function(x){return x.due_at&&new Date(x.due_at).getTime()<now;}).length;
+    var stageLookup={};pipelines.forEach(function(p){(p.stages||[]).forEach(function(s){stageLookup[s.id]=s.name;});});
+    var byStage={};openOps.forEach(function(x){var key=x.stage_id||x.status||"Unassigned";var label=stageLookup[key]||String(x.status||"Unassigned").replace(/_/g," ");byStage[label]=(byStage[label]||0)+Number(x.amount_cents||0);});
+    var stageRows=Object.keys(byStage).map(function(name){return {name:name,value:byStage[name]};}).sort(function(a,b){return b.value-a.value;});
+    var maxStage=Math.max.apply(null,stageRows.map(function(x){return x.value;}).concat([1]));
+    appContent.innerHTML=pageTop("Live workspace data, summarized for a clear next move.",
+      '<label class="report-range-label">Period<select id="reportRange"><option value="0" '+(!range?"selected":"")+'>All time</option><option value="30" '+(range===30?"selected":"")+'>Last 30 days</option><option value="90" '+(range===90?"selected":"")+'>Last 90 days</option><option value="365" '+(range===365?"selected":"")+'>Last 12 months</option></select></label><button id="exportReport" class="button button-light button-compact">↓ Export CSV</button>')+
+      '<div class="stats-grid report-stats">'+stat("Open pipeline",money(openValue,openOps[0]&&openOps[0].currency||"USD"),openOps.length+" open opportunities")+
+      stat("Weighted pipeline",money(weightedValue,openOps[0]&&openOps[0].currency||"USD"),"Amount × probability")+
+      stat("Won opportunities",wonOps.length,"In selected period")+stat("Overdue tasks",overdue,openTasks.length+" open tasks")+'</div>'+
+      '<div class="report-grid"><section class="card report-card"><div class="card-header"><div><h3>Pipeline by stage</h3><small>Open opportunity value</small></div><span class="report-total">'+esc(money(openValue,openOps[0]&&openOps[0].currency||"USD"))+'</span></div>'+
+      (stageRows.length?'<div class="report-bars">'+stageRows.map(function(row){return '<div class="report-bar-row"><div><span>'+esc(row.name)+'</span><b>'+esc(money(row.value,openOps[0]&&openOps[0].currency||"USD"))+'</b></div><span class="report-bar-track"><i class="'+reportWidth(row.value,maxStage)+'"></i></span></div>';}).join("")+'</div>':empty("No open pipeline yet","Create opportunities and place them in a pipeline to see stage performance.","Add opportunity","opportunity"))+
+      '</section><section class="card report-card"><div class="card-header"><div><h3>Workspace snapshot</h3><small>Records returned by the current workspace</small></div><span class="report-period">'+(range?"Last "+range+" days":"All time")+'</span></div><div class="report-breakdown">'+
+      [['Companies',companies.length],['People',people.length],['Opportunities',ops.length],['Tasks',tasks.length]].map(function(x){var pct=Math.round(x[1]/Math.max(companies.length+people.length+ops.length+tasks.length,1)*100);return '<div class="report-breakdown-row"><div><span>'+x[0]+'</span><b>'+x[1]+'</b></div><span class="report-bar-track"><i class="'+reportWidth(pct,100)+'"></i></span></div>';}).join("")+'</div></section></div>'+
+      '<section class="card report-detail"><div class="card-header"><div><h3>Opportunities in this period</h3><small>Up to '+ops.length+' matching records</small></div><button class="icon-button" data-go="opportunities">Open pipeline →</button></div>'+
+      (ops.length?opportunitiesTable(ops.slice().sort(function(a,b){return Number(b.amount_cents||0)-Number(a.amount_cents||0);}).slice(0,10),false):empty("No opportunities in this period","Change the report period or add an opportunity."))+'</section><p class="report-footnote">Reports use the latest records available to your role. The workspace API returns up to 500 records per type.</p>';
+    $("#reportRange").onchange=function(e){localStorage.setItem("karven_report_range",e.target.value);renderReports();};
+    $("#exportReport").onclick=function(){exportCsv("karven-opportunities.csv",ops.map(function(x){return {title:x.title,status:x.status,amount:money(x.amount_cents,x.currency),probability:x.probability,expected_close_date:x.expected_close_date,updated_at:x.updated_at};}));};
+    $("[data-go='opportunities']",appContent).onclick=function(){navigate("opportunities");};
+    bindEmptyActions();
+  }
+
+  function parseCsv(text) {
+    var rows=[],row=[],value="",quoted=false;
+    text=String(text||"").replace(/^\ufeff/,"");
+    for(var i=0;i<text.length;i++){
+      var c=text[i];
+      if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++;}else if(c==='"')quoted=false;else value+=c;}
+      else if(c==='"')quoted=true;
+      else if(c===","){row.push(value.trim());value="";}
+      else if(c==="\n"){row.push(value.trim());if(row.some(function(x){return x!=="";}))rows.push(row);row=[];value="";}
+      else if(c!=="\r")value+=c;
+    }
+    row.push(value.trim());if(row.some(function(x){return x!=="";}))rows.push(row);
+    if(!rows.length)return {headers:[],records:[]};
+    var headers=rows.shift().map(function(x){return x.trim();});
+    return {headers:headers,records:rows.map(function(values){var item={};headers.forEach(function(h,j){item[h]=values[j]||"";});return item;}).filter(function(item){return Object.values(item).some(Boolean);})};
+  }
+
+  function csvHeader(record, names) {
+    var keys=Object.keys(record);
+    for(var i=0;i<names.length;i++){var key=keys.find(function(k){return k.toLowerCase().replace(/[ _-]/g,"")===names[i];});if(key)return record[key];}
+    return "";
+  }
+
+  var importState={fileName:"",headers:[],records:[],kind:"companies"};
+
+  function renderImportPreview() {
+    var target=$("#importPreview");if(!target)return;
+    if(!importState.records.length){target.innerHTML='<div class="import-empty"><span>⇧</span><b>Choose a CSV file to preview it</b><p>Your file stays in this browser until you start the import.</p></div>';return;}
+    var rows=importState.records.slice(0,6),headers=importState.headers.slice(0,6);
+    target.innerHTML='<div class="import-file-row"><div><b>'+esc(importState.fileName)+'</b><small>'+importState.records.length+' data rows · '+importState.headers.length+' columns</small></div><button id="removeImportFile" class="icon-button">Remove</button></div><div class="table-scroll"><table class="data-table import-table"><thead><tr>'+headers.map(function(h){return '<th>'+esc(h)+'</th>';}).join("")+'</tr></thead><tbody>'+rows.map(function(r){return '<tr>'+headers.map(function(h){return '<td>'+esc(r[h]||"—")+'</td>';}).join("")+'</tr>';}).join("")+'</tbody></table></div>'+(importState.records.length>6?'<p class="import-more">Showing the first 6 of '+importState.records.length+' rows.</p>':"");
+    $("#removeImportFile").onclick=function(){importState.records=[];importState.headers=[];importState.fileName="";$("#startImport").disabled=true;renderImportPreview();};
+  }
+
+  async function renderDataTools() {
+    importState={fileName:"",headers:[],records:[],kind:"companies"};
+    var results=await Promise.all([
+      api("/api/v1/workspaces/"+wid()+"/companies?limit=500"),
+      api("/api/v1/workspaces/"+wid()+"/contacts?limit=500")
+    ]);
+    var companies=results[0].items||[], people=results[1].items||[];
+    appContent.innerHTML=pageTop("Bring records into KARVEN or export a clean copy of your workspace data.","")+ 
+      '<div class="data-tools-grid"><section class="card import-card"><div class="card-header"><div><h3>Import a CSV file</h3><small>Preview your data before it is added</small></div><span class="density-chip">CSV</span></div><div class="card-body"><div class="import-options"><label>Import type<select id="importType"><option value="companies">Companies</option><option value="people">People</option></select></label><label class="import-drop" for="importFile"><input id="importFile" type="file" accept=".csv,text/csv"><span class="import-drop-icon">↑</span><b>Choose a CSV file</b><small>Up to 5 MB · comma-separated</small></label></div><div id="importPreview" class="import-preview"></div><div id="importResult" class="import-result hidden"></div><div class="import-submit-row"><p>Company columns: name, domain, email, phone, website. Person columns: first name, last name, email, phone, job title, company. Imports are limited to 250 rows per file. Existing company names and contact emails are skipped.</p><button id="startImport" class="button button-dark button-compact" disabled>Import records</button></div></div></section><section class="card export-card"><div class="card-header"><div><h3>Export workspace data</h3><small>Download CSV files from your current workspace</small></div><span class="density-chip">Live data</span></div><div class="card-body"><div class="export-option"><div><b>Companies</b><small>'+companies.length+' records available</small></div><button class="button button-light button-compact" data-export="companies">Export CSV</button></div><div class="export-option"><div><b>People</b><small>'+people.length+' records available</small></div><button class="button button-light button-compact" data-export="people">Export CSV</button></div><p class="report-footnote">Exports include up to 500 records per type, matching the current workspace API limit.</p></div></section></div>';
+    renderImportPreview();
+    $("#importType").onchange=function(e){importState.kind=e.target.value;};
+    $("#importFile").onchange=async function(e){var file=e.target.files&&e.target.files[0];if(!file)return;if(file.size>5*1024*1024){notify("Choose a CSV file under 5 MB","error");e.target.value="";return;}try{var parsed=parseCsv(await file.text());if(!parsed.headers.length||!parsed.records.length)throw new Error("This file has no data rows");if(parsed.records.length>250)throw new Error("Split this file into batches of 250 rows or fewer");importState.fileName=file.name;importState.headers=parsed.headers;importState.records=parsed.records;renderImportPreview();$("#startImport").disabled=!roleAtLeast("member");$("#importResult").classList.add("hidden");}catch(err){notify(err.message||"Could not read this CSV","error");}};
+    $$('[data-export]',appContent).forEach(function(b){b.onclick=function(){var type=b.dataset.export,items=type==="companies"?companies:people;var rows=items.map(function(x){return type==="companies"?{name:x.name,domain:x.domain,email:x.email,phone:x.phone,website:x.website,updated_at:x.updated_at}:{first_name:x.first_name,last_name:x.last_name,company:x.company_name,email:x.email,phone:x.phone,job_title:x.job_title};});exportCsv("karven-"+type+".csv",rows);};});
+    $("#startImport").onclick=async function(){
+      if(!importState.records.length||!roleAtLeast("member"))return;
+      var kind=$("#importType").value,button=$("#startImport"),result=$("#importResult"),created=0,skipped=0,failed=0;
+      button.disabled=true;button.textContent="Importing…";result.classList.remove("hidden");result.className="import-result";result.textContent="Importing "+importState.records.length+" records. Keep this page open.";
+      var companyIndex=Object.create(null),companyNames=Object.create(null),contactEmails=Object.create(null);
+      companies.forEach(function(c){var name=String(c.name||"").trim().toLowerCase();companyIndex[name]=c.id;companyNames[name]=true;});
+      people.forEach(function(p){if(p.email)contactEmails[String(p.email).trim().toLowerCase()]=true;});
+      for(var i=0;i<importState.records.length;i++){
+        var row=importState.records[i],body,endpoint;
+        if(kind==="companies"){
+          var name=csvHeader(row,["name","company","companyname","accountname"]);
+          if(!name){skipped++;continue;}
+          var nameKey=String(name).trim().toLowerCase();if(companyNames[nameKey]){skipped++;continue;}
+          body={name:name,domain:csvHeader(row,["domain"]),email:csvHeader(row,["email"])||null,phone:csvHeader(row,["phone","phonenumber"]),website:csvHeader(row,["website","url"]),metadata:{importSource:importState.fileName}};endpoint="companies";
+        }else{
+          var first=csvHeader(row,["firstname","first"]),last=csvHeader(row,["lastname","last"]),email=csvHeader(row,["email","emailaddress"]);
+          if(!first&&!last&&!email){skipped++;continue;}
+          var emailKey=String(email||"").trim().toLowerCase();if(emailKey&&contactEmails[emailKey]){skipped++;continue;}
+          var companyName=String(csvHeader(row,["company","companyname","accountname"])||"").toLowerCase();
+          body={firstName:first,lastName:last,email:email||null,phone:csvHeader(row,["phone","phonenumber"]),jobTitle:csvHeader(row,["jobtitle","title"]),companyId:companyIndex[companyName]||null,metadata:{importSource:importState.fileName}};endpoint="contacts";
+        }
+        try{await api("/api/v1/workspaces/"+wid()+"/"+endpoint,{method:"POST",body:body});created++;if(kind==="companies"){companyNames[nameKey]=true;companyIndex[nameKey]="imported";}else if(emailKey)contactEmails[emailKey]=true;}catch(_){failed++;}
+        if((i+1)%10===0||i===importState.records.length-1)result.textContent="Processed "+(i+1)+" of "+importState.records.length+" rows…";
+      }
+      result.className="import-result "+(failed?"has-errors":"is-success");result.textContent="Import complete: "+created+" created, "+skipped+" skipped, "+failed+" failed.";button.textContent="Import complete";
+      if(created)notify(created+" records imported","success");
+    };
   }
 
   function activityList(items) {
